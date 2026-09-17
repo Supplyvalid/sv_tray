@@ -1,0 +1,4 @@
+dist/
+logs/
+src/bin/
+src/obj/
