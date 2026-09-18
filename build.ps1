@@ -3,16 +3,36 @@
 #   .\build.ps1                       # exe + installer into dist\
 #   .\build.ps1 -SkipInstaller        # exe only
 #   .\build.ps1 -MakeNsis "C:\...\makensis.exe"
+#   .\build.ps1 -BuildNumber 42         # 1.0.0 -> 1.0.0.42
+#   .\build.ps1 -Version 1.2.3          # override the version outright
 #
 # Requires: .NET 8 SDK, and NSIS (makensis.exe) for the installer step.
 param(
     [switch]$SkipInstaller,
-    [string]$MakeNsis
+    [string]$MakeNsis,
+    [string]$Version,
+    [string]$BuildNumber
 )
 
 $ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
 $dist = Join-Path $root 'dist'
+
+# One version for the exe and the installer alike. <Version> in the csproj is
+# the single source; this just decides what to layer on top of it.
+function Resolve-Version {
+    if ($Version) { return $Version }
+
+    $csproj = Join-Path $root 'src/ShelivoPrintAgent.csproj'
+    $base = ([xml](Get-Content $csproj)).Project.PropertyGroup.Version |
+        Where-Object { $_ } | Select-Object -First 1
+    if (-not $base) { throw "No <Version> element found in $csproj" }
+
+    # CI passes its run number so every build off main is distinguishable at
+    # /health; a local build just gets the plain base version.
+    if ($BuildNumber) { return "$base.$BuildNumber" }
+    return $base
+}
 
 function Resolve-Dotnet {
     $cmd = Get-Command dotnet -ErrorAction SilentlyContinue
@@ -49,8 +69,14 @@ function Resolve-MakeNsis {
 $dotnet = Resolve-Dotnet
 Write-Host "Using dotnet: $dotnet"
 
+# Not $version: PowerShell variable names are case-insensitive, so that
+# would silently overwrite the -Version parameter.
+$appVersion = Resolve-Version
+Write-Host "Version: $appVersion"
+
 & $dotnet publish (Join-Path $root 'src\ShelivoPrintAgent.csproj') `
-    -c Release -r win-x64 --self-contained true -o $dist
+    -c Release -r win-x64 --self-contained true -o $dist `
+    -p:Version=$appVersion
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed" }
 
 if ($SkipInstaller) {
@@ -61,9 +87,9 @@ if ($SkipInstaller) {
 $makensis = Resolve-MakeNsis
 Write-Host "Using makensis: $makensis"
 
-& $makensis (Join-Path $root 'installer\shelivo-print-agent.nsi')
+& $makensis "/DAPP_VERSION=$appVersion" (Join-Path $root 'installer\shelivo-print-agent.nsi')
 if ($LASTEXITCODE -ne 0) { throw "makensis failed" }
 
-Write-Host "`nBuilt:"
+Write-Host "`nBuilt ${appVersion}:"
 Write-Host "  $dist\shelivo-print-agent.exe      (the agent itself)"
 Write-Host "  $dist\ShelivoPrintAgentSetup.exe   (installer -- this is what goes to tills)"

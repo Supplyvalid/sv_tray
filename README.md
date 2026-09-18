@@ -37,8 +37,10 @@ Since it isn't code-signed, Windows may show a **"Windows protected your PC"**
 screen on first run — click **More info → Run anyway**. A code-signing
 certificate would remove that; see "Code signing" below.
 
-Set `PRINT_AGENT_ALLOWED_ORIGINS` to the real production POS URL on tills
-that use it (see Configuration).
+The POS's dev, stage and prod origins are allowed by default, so there is
+nothing to configure on a normal till. Override with
+`PRINT_AGENT_ALLOWED_ORIGINS` only for a different domain (see
+Configuration).
 
 ## Build
 
@@ -66,8 +68,22 @@ dotnet run --project src\ShelivoPrintAgent.csproj
 
 - `PRINT_AGENT_PORT` — default `9200`.
 - `PRINT_AGENT_ALLOWED_ORIGINS` — comma-separated origins allowed to call the
-  agent, default `http://localhost:4200`. **Set this to the real production
-  POS URL** on production tills; the default only covers local dev.
+  agent. Defaults to the POS's own hosts, so a normal till install needs no
+  configuration at all:
+
+  | Environment | Origin |
+  | --- | --- |
+  | prod | `https://www.pos.shelivo.com` |
+  | stage | `https://www.stage.pos.shelivo.com` |
+  | dev | `https://www.dev.pos.shelivo.com` |
+  | local | `http://localhost:4200` |
+
+  Set it only to override that list — a different POS domain, or a till that
+  should reach just one environment. Values are **origins**, not URLs: scheme
+  + host + port, no path and no trailing slash, since the browser's `Origin`
+  header has neither. `https://www.pos.shelivo.com/account/login` or
+  `https://www.pos.shelivo.com/` will not match. Note also that `www` and
+  non-`www` are different origins; if both resolve, list both.
 
 ## API
 

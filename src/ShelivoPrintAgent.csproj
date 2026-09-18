@@ -2,11 +2,22 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
+    <!-- The single source of the version. The exe reports it at /health by
+         reading its own assembly, and build.ps1 passes it to makensis for the
+         "Installed apps" entry, so a till's reported version and its
+         registered version cannot drift. CI overrides it per build. -->
+    <Version>1.0.0</Version>
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>shelivo-print-agent</AssemblyName>
     <RootNamespace>ShelivoPrintAgent</RootNamespace>
+    <!-- Embeds the icon in the exe itself. Without it the exe carries no icon
+         resource at all, so the DisplayIcon the installer registers (which
+         points at this exe) resolves to nothing and "Installed apps" shows a
+         blank tile, and the exe looks unbranded in Explorer and Task
+         Manager too. -->
+    <ApplicationIcon>..\assets\icon.ico</ApplicationIcon>
     <InvariantGlobalization>true</InvariantGlobalization>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>true</SelfContained>

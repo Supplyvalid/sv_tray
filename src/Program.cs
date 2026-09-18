@@ -1,5 +1,6 @@
 using System.Drawing.Printing;
 using System.Net;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 
@@ -7,7 +8,40 @@ namespace ShelivoPrintAgent;
 
 internal static class Program
 {
-    private const string Version = "1.0.0";
+    // Reported by /health, which is the only way to tell which build a till is
+    // actually running. Read from the assembly rather than hardcoded here, so
+    // it cannot drift from the version the installer registers -- both derive
+    // from <Version> in the csproj.
+    private static readonly string Version = ResolveVersion();
+
+    private static string ResolveVersion()
+    {
+        var informational = typeof(Program).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion;
+
+        if (string.IsNullOrWhiteSpace(informational))
+        {
+            return typeof(Program).Assembly.GetName().Version?.ToString() ?? "0.0.0";
+        }
+
+        // A build with SourceLink appends "+<commit sha>"; tills only need the
+        // version itself.
+        var plus = informational.IndexOf('+');
+        return plus >= 0 ? informational[..plus] : informational;
+    }
+
+    // Origins allowed when PRINT_AGENT_ALLOWED_ORIGINS is unset: the POS's
+    // dev, stage and prod hosts, plus a local ng serve. Baked in rather than
+    // set per till, because nothing in the installer writes that variable --
+    // leaving the default at localhost alone meant a double-clicked install
+    // refused every real POS origin, and the remedy was a manual per-machine
+    // step easily forgotten. Listing all three costs little: the listener is
+    // loopback-only and every host here is Shelivo's own.
+    private const string DefaultAllowedOrigins =
+        "https://www.pos.shelivo.com," +
+        "https://www.stage.pos.shelivo.com," +
+        "https://www.dev.pos.shelivo.com," +
+        "http://localhost:4200";
 
     private static async Task Main()
     {
@@ -18,7 +52,7 @@ internal static class Program
         // Origins allowed to call this agent, e.g. the POS web app's URL(s).
         // No per-request trust dialog like QZ Tray's -- anything on this
         // allowlist is simply allowed, silently, every time.
-        var allowedOrigins = (Environment.GetEnvironmentVariable("PRINT_AGENT_ALLOWED_ORIGINS") ?? "http://localhost:4200")
+        var allowedOrigins = (Environment.GetEnvironmentVariable("PRINT_AGENT_ALLOWED_ORIGINS") ?? DefaultAllowedOrigins)
             .Split(',')
             .Select(o => o.Trim())
             .Where(o => o.Length > 0)

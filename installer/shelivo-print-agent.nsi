@@ -11,12 +11,19 @@
 ; separate Windows logins would need this run once per account.
 
 !define APP_NAME "Shelivo Print Agent"
-!define APP_VERSION "1.0.0"
+!ifndef APP_VERSION
+  ; Fallback for a bare `makensis shelivo-print-agent.nsi` run. build.ps1
+  ; always passes /DAPP_VERSION, so that path is what real builds use.
+  !define APP_VERSION "1.0.0"
+!endif
 !define APP_PUBLISHER "Supplyvalid"
 !define APP_EXE "shelivo-print-agent.exe"
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\ShelivoPrintAgent"
 
 Unicode true
+
+; For ${GetSize}, used in the install section to record size on disk.
+!include "FileFunc.nsh"
 
 Name "${APP_NAME}"
 OutFile "..\dist\ShelivoPrintAgentSetup.exe"
@@ -49,6 +56,15 @@ Section "Install"
   File "..\scripts\uninstall-autostart.ps1"
 
   WriteUninstaller "$INSTDIR\Uninstall.exe"
+
+  ; "Installed apps" leaves the Size column blank unless EstimatedSize (in KB)
+  ; is written here -- Windows measures MSI packages itself, but not an app
+  ; registered through this key. Measured from what actually landed in
+  ; $INSTDIR rather than hardcoded, so it stays honest as the self-contained
+  ; exe grows or shrinks between releases.
+  ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
+  IntFmt $0 "0x%08X" $0
+  WriteRegDWORD HKCU "${UNINST_KEY}" "EstimatedSize" "$0"
 
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayName" "${APP_NAME}"
   WriteRegStr HKCU "${UNINST_KEY}" "DisplayVersion" "${APP_VERSION}"
