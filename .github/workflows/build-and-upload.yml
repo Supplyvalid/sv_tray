@@ -1,0 +1,167 @@
+name: Build and Upload Shelivo Print Agent
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-upload:
+    name: Build EXE and Upload to S3
+    runs-on: windows-latest
+
+    steps:
+
+      # ---------------------------------------------------------
+      # 1. Checkout source code
+      # ---------------------------------------------------------
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      # ---------------------------------------------------------
+      # 2. Install .NET 8 SDK
+      # ---------------------------------------------------------
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # ---------------------------------------------------------
+      # 3. Install NSIS
+      # ---------------------------------------------------------
+      - name: Install NSIS
+        shell: powershell
+        run: |
+          choco install nsis -y
+
+      # ---------------------------------------------------------
+      # 4. Verify tools
+      # ---------------------------------------------------------
+      - name: Verify .NET and NSIS
+        shell: powershell
+        run: |
+          Write-Host "Checking .NET..."
+          dotnet --version
+
+          Write-Host "Checking NSIS..."
+          $nsis = "C:\Program Files (x86)\NSIS\makensis.exe"
+
+          if (!(Test-Path $nsis)) {
+              throw "NSIS makensis.exe not found at $nsis"
+          }
+
+          Write-Host "NSIS found: $nsis"
+
+      # ---------------------------------------------------------
+      # 5. Build Shelivo EXE + Installer
+      # ---------------------------------------------------------
+      - name: Build Shelivo Print Agent
+        shell: powershell
+        run: |
+          $nsis = "C:\Program Files (x86)\NSIS\makensis.exe"
+
+          if (!(Test-Path $nsis)) {
+              throw "makensis.exe not found"
+          }
+
+          .\build.ps1 -MakeNsis $nsis
+
+      # ---------------------------------------------------------
+      # 6. Check generated files
+      # ---------------------------------------------------------
+      - name: Verify build output
+        shell: powershell
+        run: |
+          Write-Host "Build output:"
+          Get-ChildItem -Path .\dist -Recurse
+
+          $installer = ".\dist\ShelivoPrintAgentSetup.exe"
+
+          if (!(Test-Path $installer)) {
+              throw "ShelivoPrintAgentSetup.exe was not created"
+          }
+
+          Write-Host ""
+          Write-Host "Installer successfully created:"
+          Write-Host $installer
+
+      # ---------------------------------------------------------
+      # 7. Configure AWS credentials
+      # ---------------------------------------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-south-1
+
+      # ---------------------------------------------------------
+      # 8. Upload installer to S3 PROD
+      # ---------------------------------------------------------
+      - name: Upload installer to S3
+        shell: powershell
+        run: |
+          $file = ".\dist\ShelivoPrintAgentSetup.exe"
+
+          aws s3 cp `
+            $file `
+            s3://shelivo/prod/ShelivoPrintAgentSetup.exe `
+            --cache-control "no-cache, no-store, must-revalidate" `
+            --content-type "application/octet-stream"
+
+      # ---------------------------------------------------------
+      # 9. Upload build information
+      # ---------------------------------------------------------
+      - name: Create build information
+        shell: powershell
+        run: |
+          $commit = "${{ github.sha }}"
+          $runNumber = "${{ github.run_number }}"
+          $date = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+
+          @"
+          Product: Shelivo Print Agent
+          Environment: Production
+          Git Commit: $commit
+          GitHub Run: $runNumber
+          Build Date: $date
+          File: ShelivoPrintAgentSetup.exe
+          "@ | Out-File -FilePath build-info.txt -Encoding utf8
+
+      # ---------------------------------------------------------
+      # 10. Upload build information to S3
+      # ---------------------------------------------------------
+      - name: Upload build information
+        shell: powershell
+        run: |
+          aws s3 cp `
+            build-info.txt `
+            s3://shelivo/prod/build-info.txt `
+            --cache-control "no-cache, no-store, must-revalidate" `
+            --content-type "text/plain"
+
+      # ---------------------------------------------------------
+      # 11. Show final S3 location
+      # ---------------------------------------------------------
+      - name: Deployment completed
+        shell: powershell
+        run: |
+          Write-Host ""
+          Write-Host "=============================================="
+          Write-Host "Shelivo Production Deployment Successful"
+          Write-Host "=============================================="
+          Write-Host ""
+          Write-Host "S3 Location:"
+          Write-Host "s3://shelivo/prod/ShelivoPrintAgentSetup.exe"
+          Write-Host ""
+          Write-Host "Git Commit:"
+          Write-Host "${{ github.sha }}"
+          Write-Host ""
+          Write-Host "GitHub Run:"
+          Write-Host "${{ github.run_number }}"
+          Write-Host ""
